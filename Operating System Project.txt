@@ -1,0 +1,233 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <iomanip>
+#include <queue>
+#include <numeric>
+#include <limits>
+
+using namespace std;
+
+struct Process {
+    int pid, arrival, burst, remaining, priority;
+    int start = -1, finish = -1;
+};
+
+struct Gantt {
+    int pid, start, end;
+};
+
+void printResults(const vector<Process>& p, const vector<Gantt>& g) {
+    cout << "\nGantt Chart:\n";
+    for (auto &x : g) cout << "P" << x.pid << "(" << x.start << "→" << x.end << ")  ";
+    cout << "\n\n";
+
+    cout << left << setw(6) << "PID" << setw(10) << "Arrival"
+         << setw(8) << "Burst" << setw(10) << "Start"
+         << setw(10) << "Finish" << setw(12) << "Turn"
+         << setw(10) << "Wait\n";
+
+    double totalT = 0, totalW = 0;
+    for (auto &x : p) {
+        int tat = x.finish - x.arrival;
+        int wt = tat - x.burst;
+        totalT += tat; totalW += wt;
+
+        cout << left << setw(6) << x.pid
+             << setw(10) << x.arrival
+             << setw(8) << x.burst
+             << setw(10) << x.start
+             << setw(10) << x.finish
+             << setw(12) << tat
+             << setw(10) << wt << "\n";
+    }
+    cout << "\nAverage Turnaround: " << totalT / p.size();
+    cout << "\nAverage Waiting: " << totalW / p.size() << "\n";
+}
+
+// --------------------- FCFS ---------------------
+void FCFS(vector<Process> p) {
+    sort(p.begin(), p.end(), [](auto &a, auto &b){ return a.arrival < b.arrival; });
+    vector<Gantt> g;
+    int time = 0;
+
+    for (auto &x : p) {
+        if (time < x.arrival) time = x.arrival;
+        x.start = time;
+        x.finish = time + x.burst;
+        g.push_back({x.pid, time, x.finish});
+        time += x.burst;
+    }
+    printResults(p, g);
+}
+
+// --------------------- SJF ---------------------
+void SJF(vector<Process> p) {
+    int n = p.size(), time = 0, done = 0;
+    vector<bool> finished(n, false);
+    vector<Gantt> g;
+
+    while (done < n) {
+        int idx = -1, best = 1e9;
+
+        for (int i = 0; i < n; i++)
+            if (!finished[i] && p[i].arrival <= time && p[i].burst < best)
+                best = p[i].burst, idx = i;
+
+        if (idx == -1) { time++; continue; }
+
+        p[idx].start = time;
+        p[idx].finish = time + p[idx].burst;
+        g.push_back({p[idx].pid, time, p[idx].finish});
+        time += p[idx].burst;
+        finished[idx] = true;
+        done++;
+    }
+    printResults(p, g);
+}
+
+// --------------------- SRTF ---------------------
+void SRTF(vector<Process> p) {
+    int n = p.size(), time = 0, complete = 0;
+    vector<Gantt> g;
+
+    for (auto &x : p) x.remaining = x.burst;
+
+    while (complete < n) {
+        int idx = -1, best = 1e9;
+
+        for (int i = 0; i < n; i++)
+            if (p[i].arrival <= time && p[i].remaining > 0 && p[i].remaining < best)
+                best = p[i].remaining, idx = i;
+
+        if (idx == -1) { time++; continue; }
+
+        if (p[idx].start == -1) p[idx].start = time;
+
+        if (!g.empty() && g.back().pid == p[idx].pid)
+            g.back().end++;
+        else
+            g.push_back({p[idx].pid, time, time + 1});
+
+        p[idx].remaining--;
+        time++;
+
+        if (p[idx].remaining == 0) {
+            p[idx].finish = time;
+            complete++;
+        }
+    }
+    printResults(p, g);
+}
+
+// --------------------- Priority (Non-preemptive) ---------------------
+void PriorityNP(vector<Process> p) {
+    int n = p.size(), done = 0, time = 0;
+    vector<bool> finish(n, false);
+    vector<Gantt> g;
+
+    while (done < n) {
+        int idx = -1, best = 1e9;
+        for (int i = 0; i < n; i++)
+            if (!finish[i] && p[i].arrival <= time && p[i].priority < best)
+                best = p[i].priority, idx = i;
+
+        if (idx == -1) { time++; continue; }
+
+        p[idx].start = time;
+        p[idx].finish = time + p[idx].burst;
+        g.push_back({p[idx].pid, time, p[idx].finish});
+        time += p[idx].burst;
+        finish[idx] = true;
+        done++;
+    }
+    printResults(p, g);
+}
+
+// --------------------- Round Robin ---------------------
+void RoundRobin(vector<Process> p, int q) {
+    int n = p.size(), time = 0, done = 0;
+    queue<int> Q;
+    vector<Gantt> g;
+
+    for (auto &x : p) x.remaining = x.burst;
+
+    // sort by arrival
+    sort(p.begin(), p.end(), [](auto &a, auto &b){ return a.arrival < b.arrival; });
+    int idx = 0;
+
+    while (done < n) {
+        while (idx < n && p[idx].arrival <= time) {
+            Q.push(idx);
+            idx++;
+        }
+
+        if (Q.empty()) { time++; continue; }
+
+        int i = Q.front(); Q.pop();
+
+        if (p[i].start == -1) p[i].start = time;
+
+        int run = min(q, p[i].remaining);
+
+        if (!g.empty() && g.back().pid == p[i].pid)
+            g.back().end = time + run;
+        else
+            g.push_back({p[i].pid, time, time + run});
+
+        p[i].remaining -= run;
+        time += run;
+
+        while (idx < n && p[idx].arrival <= time) {
+            Q.push(idx);
+            idx++;
+        }
+
+        if (p[i].remaining > 0) Q.push(i);
+        else { p[i].finish = time; done++; }
+    }
+
+    printResults(p, g);
+}
+
+// ===================== MAIN =====================
+int main() {
+    cout << "CPU Scheduling Algorithms (WSL Ubuntu Compatible)\n";
+    cout << "1 - FCFS\n2 - SJF\n3 - SRTF\n4 - Priority\n5 - Round Robin\n";
+    
+    int ch, n;
+    cout << "Choose Algorithm: ";
+    cin >> ch;
+
+    cout << "Enter number of processes: ";
+    cin >> n;
+
+    vector<Process> p(n);
+
+    for (int i = 0; i < n; i++) {
+        p[i].pid = i + 1;
+        cout << "P" << p[i].pid << " (arrival, burst";
+        if (ch == 4) cout << ", priority";
+        cout << "): ";
+
+        if (ch == 4)
+            cin >> p[i].arrival >> p[i].burst >> p[i].priority;
+        else {
+            cin >> p[i].arrival >> p[i].burst;
+            p[i].priority = 0;
+        }
+    }
+
+    if (ch == 1) FCFS(p);
+    else if (ch == 2) SJF(p);
+    else if (ch == 3) SRTF(p);
+    else if (ch == 4) PriorityNP(p);
+    else if (ch == 5) {
+        int q;
+        cout << "Enter Quantum: ";
+        cin >> q;
+        RoundRobin(p, q);
+    }
+
+    return 0;
+}
