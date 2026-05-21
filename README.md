@@ -126,6 +126,6 @@ Average Waiting: 3.33
 
 **Eman Fatima**  
 BS Computer Science — Operating Systems Project  
-[Your University Name]  
+Arid Agriculture University Rawalpindi 
 
 > 📌 *Feel free to fork this repo, open issues, or suggest improvements via pull requests!*
